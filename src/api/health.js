@@ -3,7 +3,7 @@ export default async function handler(req,res) {
   let provider="none", model=null, llm=false, memory=false, llm_error=null, memory_error=null;
   const g=process.env.GROQ_API_KEY, o=process.env.OPENROUTER_API_KEY;
   if(g) {
-    provider="Groq"; model=process.env.GROQ_MODEL||"llama-3.3-70b-versatile";
+    provider="Groq"; model=([ "llama-3.3-70b-versatile", "llama-3.1-8b-instant" ].includes(process.env.GROQ_MODEL) ? "openai/gpt-oss-120b" : (process.env.GROQ_MODEL||"openai/gpt-oss-120b"));
     try { const r=await fetch("https://api.groq.com/openai/v1/models",{headers:{Authorization:"Bearer "+g},signal:AbortSignal.timeout(8000)}); llm=r.ok; if(!r.ok) llm_error="Groq HTTP "+r.status; }
     catch(e){llm_error=e.message;}
   }
