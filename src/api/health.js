@@ -3,7 +3,8 @@ export default async function handler(req,res) {
   let provider="none", model=null, llm=false, memory=false, llm_error=null, memory_error=null, imageOk=false, imageError=null;
   const g=process.env.GROQ_API_KEY, o=process.env.OPENROUTER_API_KEY;
   if(g) {
-    provider="Groq"; model=([ "llama-3.3-70b-versatile", "llama-3.1-8b-instant" ].includes(process.env.GROQ_MODEL) ? "openai/gpt-oss-120b" : (process.env.GROQ_MODEL||"openai/gpt-oss-120b"));
+    provider="Groq";
+    model=process.env.GROQ_MODEL||"openai/gpt-oss-120b";
     try { const r=await fetch("https://api.groq.com/openai/v1/models",{headers:{Authorization:"Bearer "+g},signal:AbortSignal.timeout(8000)}); llm=r.ok; if(!r.ok) llm_error="Groq HTTP "+r.status; }
     catch(e){llm_error=e.message;}
   }
@@ -12,7 +13,7 @@ export default async function handler(req,res) {
     try { const r=await fetch("https://openrouter.ai/api/v1/models",{headers:{Authorization:"Bearer "+o},signal:AbortSignal.timeout(8000)}); llm=r.ok; if(!r.ok) llm_error="OpenRouter HTTP "+r.status; }
     catch(e){llm_error=e.message;}
   }
-  try { await ensureMemory(); memory=true; } catch(e) { memory_error=e.message; }
+  try { const db=await ensureMemory(); await db`SELECT 1 AS health_check`; memory=true; } catch(e) { memory_error=e.message; }
   const research=!!process.env.FIRECRAWL_API_KEY;
   if(process.env.CLOUDFLARE_API_TOKEN&&process.env.CLOUDFLARE_ACCOUNT_ID) {
     try {
@@ -24,5 +25,5 @@ export default async function handler(req,res) {
     } catch(e) { imageError=e.message; }
   } else imageError="Faltan CLOUDFLARE_API_TOKEN o CLOUDFLARE_ACCOUNT_ID.";
   const status=llm&&memory?"operational":"degraded";
-  return res.status(200).json({status,version:"3.7.3",llm_connected:llm,provider,model,llm_error,memory_connected:memory,memory_error,firecrawl_connected:research,research_configured:research,image_generation_configured:imageOk,image_generation_error:imageError});
+  return res.status(200).json({status,version:"3.7.4",llm_connected:llm,provider,model,llm_error,memory_connected:memory,memory_error,firecrawl_connected:research,research_configured:research,image_generation_configured:imageOk,image_generation_error:imageError});
 }
