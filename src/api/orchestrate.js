@@ -18,7 +18,7 @@ function parsePlan(raw) {
   let parsed;
   try { parsed=JSON.parse(cleaned.slice(start,end)); } catch { throw new Error("SUPREMA devolvió un JSON de plan inválido."); }
   if(!Array.isArray(parsed.agents)) throw new Error("El plan no contiene una lista de agentes.");
-  const chosen=[...new Set(parsed.agents)].filter(x=>SPECIALISTS.includes(x)).slice(0,3);
+  const chosen=[...new Set(parsed.agents)].filter(x=>SPECIALISTS.includes(x)).slice(0,2);
   if(!chosen.length) throw new Error("SUPREMA no seleccionó ningún especialista válido.");
   return {agents:chosen,reason:String(parsed.reason||"Especialistas seleccionados según la tarea.")};
 }
@@ -32,7 +32,7 @@ export default async function handler(req,res) {
   const memoryContext=supremaMemory.map(m=>"["+m.kind+"] "+m.content).join("\n").slice(0,1200);
   try {
     const planner=await ask(ROLES.suprema+" Eres también la directora de un equipo multiagente. Debes delegar trabajo real a especialistas.",
-      'Analiza la misión y elige de 1 a 3 especialistas que aporten trabajo sustancial. Devuelve ÚNICAMENTE JSON válido con esta forma: {"agents":["opportunity-hunter","money-growth"],"reason":"motivo breve"}. IDs permitidos: '+SPECIALISTS.join(", ")+'. No incluyas suprema. Misión: '+task,
+      'Analiza la misión y elige de 1 a 2 especialistas que aporten trabajo sustancial. Devuelve ÚNICAMENTE JSON válido con esta forma: {"agents":["opportunity-hunter","money-growth"],"reason":"motivo breve"}. IDs permitidos: '+SPECIALISTS.join(", ")+'. No incluyas suprema. Misión: '+task,
       memoryContext,500);
     const plan=parsePlan(planner.answer);
     const settled=await Promise.allSettled(plan.agents.map(async agent=>{
@@ -44,7 +44,7 @@ export default async function handler(req,res) {
     if(!successful.length) throw new Error("Todos los especialistas fallaron: "+results.map(r=>r.agent+": "+r.error).join(" | "));
     const failures=results.filter(r=>!r.ok).map(r=>r.agent+": "+r.error).join("\n");
     const synthesisInput=successful.map(r=>"ESPECIALISTA "+r.agent+" ("+r.provider+"/"+r.model+"):\n"+String(r.answer||"").slice(0,2200)).join("\n\n---\n\n");
-    const final=await ask(ROLES.suprema+" Eres la directora de la agencia y sintetizas exclusivamente el trabajo delegado que recibes. No describas el estado de NEXORA, su infraestructura, activos, clientes, herramientas o historial salvo que esos datos estén explícitamente en la misión o en los resultados. No inventes limitaciones ni afirmes que no hay activos externos. No presentes briefs como si fueran trabajo ejecutado. REGLA CRÍTICA: los resultados de especialistas NO son evidencia externa. No conviertas en hechos sus cifras, supuestas entrevistas, registros internos, nombres de clientes, métricas o fuentes que no estén demostradas en la misión. Todo dato no aportado por el usuario debe figurar como hipótesis/estimación pendiente, nunca como hecho confirmado. Si un especialista alucina fuentes o datos, exclúyelos y señala la necesidad de validación. Señala contradicciones, riesgos, supuestos y validaciones pendientes.",
+    const final=await ask(ROLES.suprema+" Eres la directora de la agencia y sintetizas exclusivamente el trabajo delegado que recibes. No describas el estado de NEXORA, su infraestructura, activos, clientes, herramientas o historial salvo que esos datos estén explícitamente en la misión o en los resultados. No inventes limitaciones ni afirmes que no hay activos externos. No presentes briefs como si fueran trabajo ejecutado. REGLA CRÍTICA Y OBLIGATORIA: la misión de prueba no aporta datos de ninguna empresa real. Por tanto, NO nombres empresas, personas, calles, direcciones, clientes, registros, entrevistas, sistemas instalados, métricas, volúmenes, salarios, presupuestos ni fuentes concretas. NO afirmes hechos legales, estadísticas locales ni fuentes consultadas que no estén literalmente aportadas en la misión. Los resultados de especialistas NO son evidencia externa: no conviertas sus afirmaciones en hechos. Si aparecen nombres, direcciones, cifras o fuentes no aportadas, elimínalos por completo. Escribe "No consta / pendiente de validar" en su lugar. Usa únicamente el escenario hipotético y etiqueta cualquier cifra ilustrativa como hipótesis, nunca como hecho. La sección HECHOS debe limitarse a lo expresamente incluido en la misión; si no hay ninguno, indícalo claramente. Señala contradicciones, riesgos, supuestos y validaciones pendientes.",
       "MISIÓN ORIGINAL:\n"+task+"\n\nPLAN DE DELEGACIÓN:\n"+plan.reason+"\n\nRESULTADOS REALES DE LOS ESPECIALISTAS (solo estos trabajos se han ejecutado):\n"+synthesisInput+(failures?"\n\nESPECIALISTAS QUE FALLARON:\n"+failures:"")+"\n\nRedacta una síntesis ejecutiva que responda a la misión original. Usa únicamente información respaldada por la misión o los resultados recibidos. No añadas un diagnóstico genérico de la agencia. Si faltan datos, identifícalos como pendientes de validar.",
       memoryContext,900);
     let memorySaved=false;
