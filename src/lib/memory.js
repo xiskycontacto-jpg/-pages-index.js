@@ -20,7 +20,8 @@ export async function ensureMemory() {
 export async function readMemory(agent, limit = 8) {
   const db = await ensureMemory();
   const rows = await db`SELECT agent,kind,content,metadata,created_at FROM nexora_memory
-    WHERE scope='agency' ORDER BY created_at DESC LIMIT ${limit}`;
+    WHERE scope='agency' AND agent=${agent}
+    ORDER BY created_at DESC LIMIT ${limit}`;
   return rows.reverse();
 }
 export async function writeMemory(agent, kind, content, metadata = {}) {
