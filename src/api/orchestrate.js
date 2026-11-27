@@ -31,7 +31,8 @@ export default async function handler(req,res) {
   try { supremaMemory=await readMemory("suprema",8); memoryRead=true; } catch(e) {}
   const memoryContext=supremaMemory.map(m=>"["+m.kind+"] "+m.content).join("\n").slice(0,1200);
   try {
-    try { taskRunId=await createTaskRun(task); } catch(e) {}\n    const planner=await ask(ROLES.suprema+" Eres también la directora de un equipo multiagente. Debes delegar trabajo real a especialistas.",
+    try { taskRunId=await createTaskRun(task); } catch(e) {}
+    const planner=await ask(ROLES.suprema+" Eres también la directora de un equipo multiagente. Debes delegar trabajo real a especialistas.",
       'Analiza la misión y elige de 1 a 2 especialistas que aporten trabajo sustancial. Devuelve ÚNICAMENTE JSON válido con esta forma: {"agents":["opportunity-hunter","money-growth"],"reason":"motivo breve"}. IDs permitidos: '+SPECIALISTS.join(", ")+'. No incluyas suprema. Misión: '+task,
       memoryContext,500);
     const plan=parsePlan(planner.answer);
@@ -49,6 +50,7 @@ export default async function handler(req,res) {
       memoryContext,900);
     let memorySaved=false;
     try { await writeMemory("suprema","orchestration","Misión: "+task.slice(0,1000)+"\nAgentes: "+plan.agents.join(", ")+"\nSíntesis: "+final.answer.slice(0,1500),{delegated:plan.agents,provider:final.provider}); memorySaved=true; } catch(e) {}
-    try { await finishTaskRun(taskRunId,{status:"completed",agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,answer:r.answer,error:r.error})),answer:final.answer,provider:final.provider,model:final.model}); } catch(e) {}\n    return res.status(200).json({ok:true,task_run_id:taskRunId,agent:"suprema",answer:final.answer,provider:final.provider,model:final.model,delegation:{reason:plan.reason,agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,error:r.error,memory_read:r.memory_read,memory_saved:r.memory_saved,answer:r.answer}))},memory_read:memoryRead,memory_saved:memorySaved});
+    try { await finishTaskRun(taskRunId,{status:"completed",agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,answer:r.answer,error:r.error})),answer:final.answer,provider:final.provider,model:final.model}); } catch(e) {}
+    return res.status(200).json({ok:true,task_run_id:taskRunId,agent:"suprema",answer:final.answer,provider:final.provider,model:final.model,delegation:{reason:plan.reason,agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,error:r.error,memory_read:r.memory_read,memory_saved:r.memory_saved,answer:r.answer}))},memory_read:memoryRead,memory_saved:memorySaved});
   } catch(e) { try { await finishTaskRun(taskRunId,{status:"failed",error:e.message}); } catch(logError) {} return res.status(503).json({ok:false,task_run_id:taskRunId,error:e.message,agent:"suprema",memory_read:memoryRead}); }
 }
