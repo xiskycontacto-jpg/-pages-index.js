@@ -11,7 +11,7 @@ export default async function handler(req,res) {
     const url="https://api.cloudflare.com/client/v4/accounts/"+account+"/ai/run/@cf/black-forest-labs/flux-1-schnell";
     const r=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({prompt,steps:4}),signal:AbortSignal.timeout(150000)});
     const data=await r.json().catch(()=>({}));
-    if(!r.ok||data.success===false) return res.status(502).json({error:"Cloudflare AI: "+(data.errors||[]).map(x=>x.message||x.code).join("; ")||"HTTP "+r.status});
+    if(!r.ok||data.success===false) { const detail=(data.errors||[]).map(x=>x.message||x.code).join("; ")||"HTTP "+r.status; const auth=(r.status===401||r.status===403)?"Token Cloudflare rechazado. CLOUDFLARE_API_TOKEN debe ser un API Token válido con permisos Workers AI Read o Workers AI Write y CLOUDFLARE_ACCOUNT_ID debe pertenecer a esa cuenta. ":""; return res.status(502).json({error:auth+"Cloudflare AI: "+detail}); }
     const image=data.result?.image;
     if(typeof image!=="string") return res.status(502).json({error:"Cloudflare no devolvió una imagen válida."});
     return res.status(200).json({ok:true,image:"data:image/png;base64,"+image});
