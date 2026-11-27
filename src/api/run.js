@@ -1,5 +1,5 @@
 import { readMemory, writeMemory } from "../lib/memory.js";
-export const config = { maxDuration: 300 };
+export const config = { maxDuration: 60 };
 
 const ROLES = {
   suprema: "Eres SUPREMA, directora y arquitecta de Nexora IA. Coordina especialistas, prioriza rentabilidad, evidencia y riesgo. Distingue hechos, inferencias e hipótesis. Da un plan ejecutable.",
@@ -20,7 +20,7 @@ async function ask(system, task, context) {
   let last = "No se pudo conectar con ningún proveedor.";
   for (const p of providers) {
     try {
-      const r = await fetch(p.url,{method:"POST",headers:{Authorization:"Bearer "+p.key,"Content-Type":"application/json","HTTP-Referer":"https://agencia-ia-agent-0.vercel.app","X-Title":"Nexora IA"},body:JSON.stringify({model:p.model,messages:[{role:"system",content:system+(context?"\n\nMEMORIA RECIENTE:\n"+context:"")},{role:"user",content:task}],temperature:0.55,max_tokens:1800}),signal:AbortSignal.timeout(120000)});
+      const r = await fetch(p.url,{method:"POST",headers:{Authorization:"Bearer "+p.key,"Content-Type":"application/json","HTTP-Referer":"https://agencia-ia-agent-0.vercel.app","X-Title":"Nexora IA"},body:JSON.stringify({model:p.model,messages:[{role:"system",content:system+(context?"\n\nMEMORIA RECIENTE:\n"+context:"")},{role:"user",content:task}],temperature:0.55,max_tokens:1200}),signal:AbortSignal.timeout(15000)});
       const data = await r.json().catch(()=>({}));
       if (!r.ok) { last=p.name+" HTTP "+r.status+": "+(data.error?.message||"error del proveedor"); continue; }
       const answer = data.choices?.[0]?.message?.content;
@@ -34,7 +34,7 @@ async function ask(system, task, context) {
 async function researchWeb(task) {
   if (!process.env.FIRECRAWL_API_KEY) return {sources:[],context:"Investigación web no disponible: falta FIRECRAWL_API_KEY."};
   try {
-    const r=await fetch("https://api.firecrawl.dev/v2/search",{method:"POST",headers:{Authorization:"Bearer "+process.env.FIRECRAWL_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({query:task+" Spain market customers competitors pricing",limit:6,sources:[{type:"web"}],country:"ES",location:"Spain",scrapeOptions:{formats:[{type:"markdown"}],onlyMainContent:true,maxAge:0,timeout:30000}}),signal:AbortSignal.timeout(45000)});
+    const r=await fetch("https://api.firecrawl.dev/v2/search",{method:"POST",headers:{Authorization:"Bearer "+process.env.FIRECRAWL_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({query:task+" Spain market customers competitors pricing",limit:5,sources:[{type:"web"}],country:"ES",location:"Spain"}),signal:AbortSignal.timeout(9000)});
     const data=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error("Firecrawl HTTP "+r.status);
     const rows=data.data?.web||data.web||data.data||[];
@@ -60,20 +60,17 @@ async function save(agent, task, answer, provider, model) {
 
 async function runOrchestration(task) {
   const research=await researchWeb(task);
-  const pipeline = [
-    {agent:"opportunity-hunter",label:"Opportunity Hunter",instruction:"Investiga y define la oportunidad. Usa los resultados web, enlaza las fuentes relevantes y separa evidencia comprobable, hipótesis y datos pendientes."},
-    {agent:"money-growth",label:"Money & Growth",instruction:"Evalúa la oportunidad anterior: cliente, oferta, precio, costes, margen, captación, riesgos y prueba mínima. No inventes datos."},
-    {agent:"sales-copilot",label:"Sales Copilot",instruction:"Convierte la oportunidad y su evaluación económica en una propuesta comercial inicial, mensaje de contacto y siguiente paso medible."}
-  ];
   const stages = [];
-  let previous = "";
-  for (const step of pipeline) {
-    const context = await getContext(step.agent);
-    const result = await ask(ROLES[step.agent],step.instruction+"\n\nMISIÓN ORIGINAL:\n"+task+"\n\nFUENTES WEB RECIENTES:\n"+research.context+"\n\nRESULTADO DEL ESPECIALISTA ANTERIOR:\n"+(previous||"Primera fase: analiza la misión original."),context);
-    stages.push({agent:step.agent,name:step.label,answer:result.answer,provider:result.provider,model:result.model});
-    await save(step.agent,task,result.answer,result.provider,result.model);
-    previous = result.answer;
-  }
+  const hunter = await ask(ROLES["opportunity-hunter"],"Investiga y define la oportunidad. Usa las fuentes web, enlaza las relevantes y separa evidencia, hipótesis y datos pendientes.\\n\\nMISIÓN:\\n"+task+"\\n\\nFUENTES WEB:\\n"+research.context,await getContext("opportunity-hunter"));
+  stages.push({agent:"opportunity-hunter",name:"Opportunity Hunter",answer:hunter.answer,provider:hunter.provider,model:hunter.model});
+  await save("opportunity-hunter",task,hunter.answer,hunter.provider,hunter.model);
+  const [money,sales] = await Promise.all([
+    ask(ROLES["money-growth"],"Evalúa la oportunidad con cliente, oferta, precios, costes, margen, captación, riesgos y prueba mínima. Declara supuestos y no inventes cifras.\\n\\nMISIÓN:\\n"+task+"\\n\\nANÁLISIS DE OPORTUNIDAD:\\n"+hunter.answer,await getContext("money-growth")),
+    ask(ROLES["sales-copilot"],"Prepara una propuesta comercial inicial, un mensaje de contacto y un siguiente paso medible para esta oportunidad. No contactes a nadie.\\n\\nMISIÓN:\\n"+task+"\\n\\nANÁLISIS DE OPORTUNIDAD:\\n"+hunter.answer,await getContext("sales-copilot"))
+  ]);
+  stages.push({agent:"money-growth",name:"Money & Growth",answer:money.answer,provider:money.provider,model:money.model});
+  stages.push({agent:"sales-copilot",name:"Sales Copilot",answer:sales.answer,provider:sales.provider,model:sales.model});
+  await Promise.all([save("money-growth",task,money.answer,money.provider,money.model),save("sales-copilot",task,sales.answer,sales.provider,sales.model)]);
   const summary = stages.map(s=>"## "+s.name+"\n"+s.answer).join("\n\n");
   const final = await ask(ROLES.suprema,"Integra el trabajo real de los tres especialistas. No repitas sin criterio. Entrega: decisión, oportunidad concreta, evidencia frente a hipótesis, modelo económico con supuestos, propuesta comercial, plan de 48 horas, riesgos y criterio para continuar o parar. Incluye las fuentes web aportadas y advierte si no bastan para validar la demanda.\n\nMISIÓN:\n"+task+"\n\nFUENTES WEB:\n"+research.context+"\n\nINFORMES DE LOS ESPECIALISTAS:\n"+summary,await getContext("suprema"));
   const memorySaved = await save("suprema",task,final.answer,final.provider,final.model);
