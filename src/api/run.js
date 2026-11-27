@@ -12,13 +12,13 @@ export const ROLES = {
 };
 export async function ask(system, task, context, maxTokens=1800) {
   const providers=[];
-  if(process.env.GROQ_API_KEY) providers.push({name:"Groq",key:process.env.GROQ_API_KEY,url:"https://api.groq.com/openai/v1/chat/completions",model:process.env.GROQ_MODEL||"llama-3.3-70b-versatile"});
+  if(process.env.GROQ_API_KEY) providers.push({name:"Groq",key:process.env.GROQ_API_KEY,url:"https://api.groq.com/openai/v1/chat/completions",model:([ "llama-3.3-70b-versatile", "llama-3.1-8b-instant" ].includes(process.env.GROQ_MODEL) ? "openai/gpt-oss-120b" : (process.env.GROQ_MODEL||"openai/gpt-oss-120b"))});
   if(process.env.OPENROUTER_API_KEY) providers.push({name:"OpenRouter",key:process.env.OPENROUTER_API_KEY,url:"https://openrouter.ai/api/v1/chat/completions",model:process.env.OPENROUTER_MODEL||"openrouter/free"});
   if(!providers.length) throw new Error("No hay proveedor LLM configurado.");
   let last="No se pudo conectar con ningún proveedor."; const failures=[];
   for(const p of providers) {
     try {
-      const r=await fetch(p.url,{method:"POST",headers:{Authorization:"Bearer "+p.key,"Content-Type":"application/json","HTTP-Referer":"https://agencia-ia-agent-0.vercel.app","X-Title":"Nexora IA"},body:JSON.stringify({model:p.model,messages:[{role:"system",content:system+(context?"\\n\\nMEMORIA RECIENTE:\\n"+context:"")},{role:"user",content:task}],temperature:0.45,max_tokens:maxTokens}),signal:AbortSignal.timeout(120000)});
+      const r=await fetch(p.url,{method:"POST",headers:{Authorization:"Bearer "+p.key,"Content-Type":"application/json","HTTP-Referer":"https://agencia-ia-agent-0.vercel.app","X-Title":"Nexora IA"},body:JSON.stringify({model:p.model,messages:[{role:"system",content:system+(context?"\\n\\nMEMORIA RECIENTE:\\n"+context:"")},{role:"user",content:task}],temperature:0.45,max_completion_tokens:maxTokens}),signal:AbortSignal.timeout(120000)});
       const data=await r.json().catch(()=>({}));
       if(!r.ok) { last=p.name+" HTTP "+r.status+": "+(data.error?.message||JSON.stringify(data).slice(0,500)); failures.push(last); continue; }
       const answer=data.choices?.[0]?.message?.content;
