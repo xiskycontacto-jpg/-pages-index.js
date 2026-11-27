@@ -50,7 +50,7 @@ export default async function handler(req,res) {
       memoryContext,900);
     let memorySaved=false;
     try { await writeMemory("suprema","orchestration","Misión: "+task.slice(0,1000)+"\nAgentes: "+plan.agents.join(", ")+"\nSíntesis: "+final.answer.slice(0,1500),{delegated:plan.agents,provider:final.provider}); memorySaved=true; } catch(e) {}
-    try { await finishTaskRun(taskRunId,{status:"completed",agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,answer:r.answer,error:r.error})),answer:final.answer,provider:final.provider,model:final.model}); } catch(e) {}
+    await finishTaskRun(taskRunId,{status:"completed",agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,answer:r.answer,error:r.error})),answer:final.answer,provider:final.provider,model:final.model});
     return res.status(200).json({ok:true,task_run_id:taskRunId,agent:"suprema",answer:final.answer,provider:final.provider,model:final.model,delegation:{reason:plan.reason,agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,error:r.error,memory_read:r.memory_read,memory_saved:r.memory_saved,answer:r.answer}))},memory_read:memoryRead,memory_saved:memorySaved});
-  } catch(e) { try { await finishTaskRun(taskRunId,{status:"failed",error:e.message}); } catch(logError) {} return res.status(503).json({ok:false,task_run_id:taskRunId,error:e.message,agent:"suprema",memory_read:memoryRead}); }
+  } catch(e) { let taskLogError=null; try { await finishTaskRun(taskRunId,{status:"failed",error:e.message}); } catch(logError) { taskLogError=logError.message||"No se pudo guardar el estado fallido."; } return res.status(503).json({ok:false,task_run_id:taskRunId,error:e.message,task_log_error:taskLogError,agent:"suprema",memory_read:memoryRead}); }
 }
