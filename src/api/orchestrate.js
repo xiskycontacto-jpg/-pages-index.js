@@ -31,7 +31,7 @@ export default async function handler(req,res) {
   try { supremaMemory=await readMemory("suprema",8); memoryRead=true; } catch(e) {}
   const memoryContext=supremaMemory.map(m=>"["+m.kind+"] "+m.content).join("\n").slice(0,1200);
   try {
-    try { taskRunId=await createTaskRun(task); } catch(e) {}
+    taskRunId=await createTaskRun(task); if(!taskRunId) throw new Error("No se pudo registrar la ejecución en la memoria persistente; se cancela para no perder trazabilidad.");
     const planner=await ask(ROLES.suprema+" Eres también la directora de un equipo multiagente. Debes delegar trabajo real a especialistas.",
       'Analiza la misión y elige de 1 a 2 especialistas que aporten trabajo sustancial. Devuelve ÚNICAMENTE JSON válido con esta forma: {"agents":["opportunity-hunter","money-growth"],"reason":"motivo breve"}. IDs permitidos: '+SPECIALISTS.join(", ")+'. No incluyas suprema. Misión: '+task,
       memoryContext,500);
