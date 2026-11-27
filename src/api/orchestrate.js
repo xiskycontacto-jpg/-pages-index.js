@@ -22,7 +22,7 @@ export default async function handler(req,res) {
   const memoryContext=supremaMemory.map(m=>"["+m.kind+"] "+m.content).join("\n");
   try {
     const planner=await ask(ROLES.suprema+" Eres también la directora de un equipo multiagente. Debes delegar trabajo real a especialistas.", 
-      "Analiza la misión y elige de 1 a 3 especialistas que aporten trabajo sustancial. Devuelve ÚNICAMENTE JSON válido con esta forma: {\\"agents\\":[\\"opportunity-hunter\\",\\"money-growth\\"],\\"reason\\":\\"motivo breve\\"}. IDs permitidos: "+SPECIALISTS.join(", ")+". No incluyas suprema. Misión: "+task,
+      'Analiza la misión y elige de 1 a 3 especialistas que aporten trabajo sustancial. Devuelve ÚNICAMENTE JSON válido con esta forma: {"agents":["opportunity-hunter","money-growth"],"reason":"motivo breve"}. IDs permitidos: '+SPECIALISTS.join(", ")+'. No incluyas suprema. Misión: '+task,
       memoryContext,500);
     const plan=parsePlan(planner.answer);
     const results=await Promise.all(plan.agents.map(async agent=>{
