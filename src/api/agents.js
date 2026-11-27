@@ -10,5 +10,5 @@ const agents = [
 ].map(([id,name,area,mission]) => ({id,name,area,mission}));
 export default function handler(req,res) {
   res.setHeader("Cache-Control","no-store");
-  return res.status(200).json({agency:"Nexora IA",orchestrator:"SUPREMA",version:"3.7.3",agents});
+  return res.status(200).json({agency:"Nexora IA",orchestrator:"SUPREMA",version:"3.7.4",agents});
 }
