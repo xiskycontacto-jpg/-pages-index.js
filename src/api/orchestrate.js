@@ -1,5 +1,5 @@
 import { ask, executeAgent, ROLES } from "./run.js";
-import { readMemory, writeMemory } from "../lib/memory.js";
+import { readMemory, writeMemory, createTaskRun, finishTaskRun } from "../lib/memory.js";
 export const config = { maxDuration: 300 };
 const SPECIALISTS = Object.keys(ROLES).filter(x=>x!=="suprema");
 function parsePlan(raw) {
@@ -27,7 +27,7 @@ export default async function handler(req,res) {
   const task=String(req.body?.task||"").trim();
   if(!task) return res.status(400).json({ok:false,error:"Escribe una tarea para SUPREMA."});
   if(task.length>10000) return res.status(413).json({ok:false,error:"La tarea supera el límite de 10.000 caracteres."});
-  let supremaMemory=[], memoryRead=false;
+  let supremaMemory=[], memoryRead=false, taskRunId=null;
   try { supremaMemory=await readMemory("suprema",8); memoryRead=true; } catch(e) {}
   const memoryContext=supremaMemory.map(m=>"["+m.kind+"] "+m.content).join("\n").slice(0,1200);
   try {
@@ -49,6 +49,6 @@ export default async function handler(req,res) {
       memoryContext,900);
     let memorySaved=false;
     try { await writeMemory("suprema","orchestration","Misión: "+task.slice(0,1000)+"\nAgentes: "+plan.agents.join(", ")+"\nSíntesis: "+final.answer.slice(0,1500),{delegated:plan.agents,provider:final.provider}); memorySaved=true; } catch(e) {}
-    return res.status(200).json({ok:true,agent:"suprema",answer:final.answer,provider:final.provider,model:final.model,delegation:{reason:plan.reason,agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,error:r.error,memory_read:r.memory_read,memory_saved:r.memory_saved,answer:r.answer}))},memory_read:memoryRead,memory_saved:memorySaved});
-  } catch(e) { return res.status(503).json({ok:false,error:e.message,agent:"suprema",memory_read:memoryRead}); }
+    try { await finishTaskRun(taskRunId,{status:"completed",agents:results.map(r=>({agent:r.agent,ok:r.ok})),answer:final.answer,provider:final.provider,model:final.model}); } catch(e) {}\n    return res.status(200).json({ok:true,task_run_id:taskRunId,agent:"suprema",answer:final.answer,provider:final.provider,model:final.model,delegation:{reason:plan.reason,agents:results.map(r=>({agent:r.agent,ok:r.ok,provider:r.provider,model:r.model,error:r.error,memory_read:r.memory_read,memory_saved:r.memory_saved,answer:r.answer}))},memory_read:memoryRead,memory_saved:memorySaved});
+  } catch(e) { try { await finishTaskRun(taskRunId,{status:"failed",error:e.message}); } catch(logError) {} return res.status(503).json({ok:false,task_run_id:taskRunId,error:e.message,agent:"suprema",memory_read:memoryRead}); }
 }
