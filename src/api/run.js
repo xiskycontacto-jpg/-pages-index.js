@@ -37,11 +37,13 @@ export default async function handler(req,res) {
   if(task.length>12000) return res.status(413).json({error:"La tarea supera el límite de 12.000 caracteres."});
   const system=ROLES[agent]||ROLES.suprema;
   let memories=[];
-  try { memories=await readMemory(agent,8); } catch(e) { /* LLM puede funcionar sin memoria */ }
+  let memoryRead=false;
+  try { memories=await readMemory(agent,8); memoryRead=true; } catch(e) { /* LLM puede funcionar sin memoria */ }
   const context=memories.map(m=>"["+m.agent+"/"+m.kind+"] "+m.content).join("\n");
   try {
     const result=await ask(system,task,context);
-    try { await writeMemory(agent,"interaction","Tarea: "+task.slice(0,1200)+"\nRespuesta: "+result.answer.slice(0,1800),{provider:result.provider,model:result.model}); } catch(e) { /* memoria opcional */ }
-    return res.status(200).json({ok:true,agent,answer:result.answer,provider:result.provider,model:result.model,memory_saved:true});
-  } catch(e) { return res.status(503).json({ok:false,error:e.message,agent}); }
+    let memorySaved=false;
+    try { await writeMemory(agent,"interaction","Tarea: "+task.slice(0,1200)+"\nRespuesta: "+result.answer.slice(0,1800),{provider:result.provider,model:result.model}); memorySaved=true; } catch(e) { /* informar estado real */ }
+    return res.status(200).json({ok:true,agent,answer:result.answer,provider:result.provider,model:result.model,memory_read:memoryRead,memory_saved:memorySaved});
+  } catch(e) { return res.status(503).json({ok:false,error:e.message,agent,memory_read:memoryRead}); }
 }
