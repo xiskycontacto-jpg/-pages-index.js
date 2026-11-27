@@ -3,7 +3,7 @@ export const config = { maxDuration: 300 };
 
 const ROLES = {
   suprema: "Eres SUPREMA, directora y arquitecta de Nexora IA. Coordina especialistas, prioriza rentabilidad, evidencia y riesgo. Distingue hechos, inferencias e hipótesis. Da un plan ejecutable.",
-  "opportunity-hunter": "Eres Opportunity Hunter. Identifica clientes, problemas, demanda, competencia, soluciones y oportunidades monetizables. No inventes evidencias ni cifras; indica qué falta validar.",
+  "opportunity-hunter": "Eres Opportunity Hunter. Investiga clientes, problemas, demanda, competencia y oportunidades monetizables. Usa las fuentes web aportadas; no inventes evidencias ni cifras. Distingue hechos, inferencias e hipótesis.",
   "money-growth": "Eres Money & Growth. Diseña oferta, precios, costes, margen, punto de equilibrio y plan comercial. Declara supuestos y termina con GO, TEST o NO-GO.",
   "sales-copilot": "Eres Sales Copilot. Crea propuestas comerciales, argumentarios, objeciones y próximos pasos concretos.",
   "social-media": "Eres Social Media Manager. Diseña estrategia, calendario, formatos, distribución y métricas.",
@@ -31,6 +31,21 @@ async function ask(system, task, context) {
   throw new Error(last);
 }
 
+async function researchWeb(task) {
+  if (!process.env.FIRECRAWL_API_KEY) return {sources:[],context:"Investigación web no disponible: falta FIRECRAWL_API_KEY."};
+  try {
+    const r=await fetch("https://api.firecrawl.dev/v2/search",{method:"POST",headers:{Authorization:"Bearer "+process.env.FIRECRAWL_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({query:task+" Spain market customers competitors pricing",limit:6,sources:[{type:"web"}],country:"ES",location:"Spain",scrapeOptions:{formats:[{type:"markdown"}],onlyMainContent:true,maxAge:0,timeout:30000}}),signal:AbortSignal.timeout(45000)});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error("Firecrawl HTTP "+r.status);
+    const rows=data.data?.web||data.web||data.data||[];
+    const sources=(Array.isArray(rows)?rows:[]).slice(0,6).map(x=>({title:x.title||"Fuente web",url:x.url||"",description:x.description||x.snippet||x.markdown?.slice(0,900)||""})).filter(x=>x.url);
+    const context=sources.length?sources.map((s,i)=>"["+ (i+1)+"] "+s.title+"\nURL: "+s.url+"\n"+s.description).join("\n\n"):"La búsqueda web no devolvió resultados útiles.";
+    return {sources,context};
+  } catch(e) {
+    return {sources:[],context:"La búsqueda web falló: "+e.message+". No presentes afirmaciones de mercado como verificadas."};
+  }
+}
+
 async function getContext(agent) {
   try { return (await readMemory(agent,8)).map(m=>"["+m.agent+"/"+m.kind+"] "+m.content).join("\n"); }
   catch { return ""; }
@@ -44,8 +59,9 @@ async function save(agent, task, answer, provider, model) {
 }
 
 async function runOrchestration(task) {
+  const research=await researchWeb(task);
   const pipeline = [
-    {agent:"opportunity-hunter",label:"Opportunity Hunter",instruction:"Investiga y define la oportunidad. Separa evidencia comprobable, hipótesis y datos pendientes. Si faltan datos, dilo."},
+    {agent:"opportunity-hunter",label:"Opportunity Hunter",instruction:"Investiga y define la oportunidad. Usa los resultados web, enlaza las fuentes relevantes y separa evidencia comprobable, hipótesis y datos pendientes."},
     {agent:"money-growth",label:"Money & Growth",instruction:"Evalúa la oportunidad anterior: cliente, oferta, precio, costes, margen, captación, riesgos y prueba mínima. No inventes datos."},
     {agent:"sales-copilot",label:"Sales Copilot",instruction:"Convierte la oportunidad y su evaluación económica en una propuesta comercial inicial, mensaje de contacto y siguiente paso medible."}
   ];
@@ -53,15 +69,15 @@ async function runOrchestration(task) {
   let previous = "";
   for (const step of pipeline) {
     const context = await getContext(step.agent);
-    const result = await ask(ROLES[step.agent],step.instruction+"\n\nMISIÓN ORIGINAL:\n"+task+"\n\nRESULTADO DEL ESPECIALISTA ANTERIOR:\n"+(previous||"Primera fase: analiza la misión original."),context);
+    const result = await ask(ROLES[step.agent],step.instruction+"\n\nMISIÓN ORIGINAL:\n"+task+"\n\nFUENTES WEB RECIENTES:\n"+research.context+"\n\nRESULTADO DEL ESPECIALISTA ANTERIOR:\n"+(previous||"Primera fase: analiza la misión original."),context);
     stages.push({agent:step.agent,name:step.label,answer:result.answer,provider:result.provider,model:result.model});
     await save(step.agent,task,result.answer,result.provider,result.model);
     previous = result.answer;
   }
   const summary = stages.map(s=>"## "+s.name+"\n"+s.answer).join("\n\n");
-  const final = await ask(ROLES.suprema,"Integra el trabajo real de los tres especialistas. No repitas sin criterio. Entrega: decisión, oportunidad concreta, evidencia frente a hipótesis, modelo económico con supuestos, propuesta comercial, plan de 48 horas, riesgos y criterio para continuar o parar.\n\nMISIÓN:\n"+task+"\n\nINFORMES DE LOS ESPECIALISTAS:\n"+summary,await getContext("suprema"));
+  const final = await ask(ROLES.suprema,"Integra el trabajo real de los tres especialistas. No repitas sin criterio. Entrega: decisión, oportunidad concreta, evidencia frente a hipótesis, modelo económico con supuestos, propuesta comercial, plan de 48 horas, riesgos y criterio para continuar o parar. Incluye las fuentes web aportadas y advierte si no bastan para validar la demanda.\n\nMISIÓN:\n"+task+"\n\nFUENTES WEB:\n"+research.context+"\n\nINFORMES DE LOS ESPECIALISTAS:\n"+summary,await getContext("suprema"));
   const memorySaved = await save("suprema",task,final.answer,final.provider,final.model);
-  return {ok:true,agent:"suprema",answer:final.answer,provider:final.provider,model:final.model,memory_saved:memorySaved,orchestrated:true,stages};
+  return {ok:true,agent:"suprema",answer:final.answer,provider:final.provider,model:final.model,memory_saved:memorySaved,orchestrated:true,stages,research_sources:research.sources};
 }
 
 export default async function handler(req,res) {
@@ -72,10 +88,7 @@ export default async function handler(req,res) {
   if (!task) return res.status(400).json({error:"Escribe una tarea para el agente."});
   if (task.length>12000) return res.status(413).json({error:"La tarea supera el límite de 12.000 caracteres."});
   try {
-    if (agent==="suprema") {
-      const result=await runOrchestration(task);
-      return res.status(200).json(result);
-    }
+    if (agent==="suprema") return res.status(200).json(await runOrchestration(task));
     const selected=ROLES[agent]?agent:"suprema";
     const result=await ask(ROLES[selected],task,await getContext(selected));
     const memorySaved=await save(selected,task,result.answer,result.provider,result.model);
